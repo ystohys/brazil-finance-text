@@ -1,0 +1,7 @@
+.DS_Store
+.idea/
+.ipynb_checkpoints/
+bids/
+File_[0-9].csv
+text_venv/
+*.ipynb

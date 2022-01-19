@@ -1,5 +1,6 @@
 import re
 from copy import deepcopy
+from datetime import datetime
 
 
 class FirstInfoExtractor:
@@ -40,7 +41,10 @@ class FirstInfoExtractor:
         return out_dict
 
     def extract_and_add(self):
+        row_num = 0
         for line in self.lines:
+            row_num += 1
+            self.col_dict['FileRow'] = row_num
             if line.count(': ') > 1:
                 if (self.within_row or self.stop_count >= 0) and re.fullmatch('^"Aceito para: .* (.*: .*) \."\n',
                                                                               line) is not None:
@@ -99,7 +103,7 @@ class FirstInfoExtractor:
                         self.col_dict = self.line_split_to_dict(temp_line2, self.col_dict,
                                                                 dict_head='Aplicabilidade Margem de Preferência')
             elif line.count(': ') == 1:
-                if re.fullmatch('^"Item: [0-9][0-9]*"\n$', line) is not None and self.within_row == False:
+                if re.fullmatch('^"Item: [0-9][0-9]*"\n$', line) is not None and not self.within_row:
                     self.within_row = True
                     self.col_dict = self.line_split_to_dict(line, self.col_dict, cleanse=True)
                 elif (self.within_row or self.stop_count >= 0) and (
@@ -109,7 +113,7 @@ class FirstInfoExtractor:
                     self.within_row = False
                     self.df1.append(self.col_dict)
                     self.col_dict = {'FileName': self.trunc_filepath}
-                elif (self.within_row or self.stop_count >= 0):
+                elif self.within_row or self.stop_count >= 0:
                     if re.fullmatch('""\n|^"Descrição Complementar:"\n$', line) is not None:
                         continue
                     else:
@@ -119,3 +123,292 @@ class FirstInfoExtractor:
                             self.col_dict = {'FileName': self.trunc_filepath}
             self.stop_count -= 1
 
+
+class MidInfoExtractor:
+
+    def __init__(self, path, df2, df3):
+        self.filepath = path
+        self.trunc_filepath = self.filepath.removeprefix('bids/txt/')
+
+        self.within_sect = False
+        self.within_two = False
+        self.within_three = False
+        self.current_item = ""
+
+        self.df2 = df2
+        self.df3 = df3
+
+        self.col_dict2 = {}
+        self.col_dict3 = {}
+
+        with open(path, encoding="ISO-8859-1") as f:
+            self.lines = f.readlines()
+
+    def update_second_df(self):
+        return self.df2
+
+    def update_third_df(self):
+        return self.df3
+
+    def second_parser(self, input_line, line_type, line_row, cleanse=False):
+        # Returns a dictionary with a single line's information parsed
+        temp_line = input_line
+        if cleanse:
+            temp_line = temp_line.removesuffix('"\n')
+            temp_line = temp_line.removeprefix('"')
+
+        if line_type == '1a' or line_type == '2a':
+            uno_dict = {'FileName': self.trunc_filepath,
+                        'FileRow': line_row,
+                        'CNPJ/CPF': re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]}
+            res_str = ('(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Sim .*)'
+                       '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Não .*)'
+                       '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Não Sim .*)'
+                       '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Não Não .*)')
+            uno_dict['Fornecedor'] = re.findall(res_str, temp_line)[0]
+            list_one = re.findall('Sim Sim|Sim Não|Não Sim|Não Não', temp_line)
+            list_two = re.split(' ', list_one[0])
+            if line_type == '1a':
+                uno_dict['Porte ME/EPP'] = list_two[0]
+                uno_dict['Declaração ME/EPP/COOP'] = list_two[1]
+            elif line_type == '2a':
+                uno_dict['ME/EPP Equiparada'] = list_two[0]
+                uno_dict['Declaração ME/EPP'] = list_two[1]
+            res_str = None
+
+            res_str = ('(?<=Sim Sim ).*(?= R\$.*R\$)|'
+                       '(?<=Sim Não ).*(?= R\$.*R\$)|'
+                       '(?<=Não Sim ).*(?= R\$.*R\$)|'
+                       '(?<=Não Não ).*(?= R\$.*R\$)')
+            uno_dict['Quantidade'] = re.findall(res_str, temp_line)[0]
+            valor_line = re.findall(' R\$ [0-9][^\s]*[0-9] R\$ [0-9][^\s]*', temp_line)[0]
+            valor_line2 = re.split(' R\$ ', valor_line)
+            uno_dict['Valor Unit.'] = valor_line2[1]
+            uno_dict['Valor Global'] = valor_line2[2]
+            uno_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
+            uno_dict['Data/Hora Registro'] = datetime.strptime(uno_time, '%d/%m/%Y %H:%M:%S')
+            del list_one, list_two, valor_line, valor_line2
+            return uno_dict
+
+        elif line_type == '3a':
+            tres_dict = {'FileName': self.trunc_filepath,
+                        'FileRow': line_row,
+                        'CNPJ/CPF': re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]}
+            res_str = '(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= [0-9,.]* R\$ [0-9,.]* R\$ .*)'
+            tres_dict['Fornecedor'] = re.findall(res_str, temp_line)[0]
+            res_str = None
+
+            res_str = '(?<=\s)[0-9,.]*(?= R\$ [0-9,.]* R\$ .*)'
+            tres_dict['Quantidade'] = re.findall(res_str, temp_line)[0]
+            valor_line = re.findall(' R\$ [0-9][^\s]*[0-9] R\$ [0-9][^\s]*', temp_line)[0]
+            valor_line2 = re.split(' R\$ ', valor_line)
+            tres_dict['Valor Unit.'] = valor_line2[1]
+            tres_dict['Valor Global'] = valor_line2[2]
+            tres_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
+            tres_dict['Data/Hora Registro'] = datetime.strptime(tres_time, '%d/%m/%Y %H:%M:%S')
+            del valor_line, valor_line2
+            return tres_dict
+
+        elif line_type == '4b':
+            quad_dict = {'FileName': self.trunc_filepath,
+                         'FileRow': line_row,
+                         'CNPJ/CPF': re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]}
+            res_str = ('(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Sim .*)'
+                       '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Não .*)'
+                       '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Não Sim .*)'
+                       '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Não Não .*)')
+            quad_dict['Fornecedor'] = re.findall(res_str, temp_line)[0]
+            list_one = re.findall('Sim Sim|Sim Não|Não Sim|Não Não', temp_line)
+            list_two = re.split(' ', list_one[0])
+            quad_dict['Porte ME/EPP'] = list_two[0]
+            quad_dict['Declaração ME/EPP/COOP'] = list_two[1]
+            res_str = None
+
+            res_str = ('(?<=Sim Sim ).*(?= [0-9,.]* %)|'
+                       '(?<=Sim Não ).*(?= [0-9,.]* %)|'
+                       '(?<=Não Sim ).*(?= [0-9,.]* %)|'
+                       '(?<=Não Não ).*(?= [0-9,.]* %)')
+            quad_dict['Quantitade'] = re.findall(res_str, temp_line)[0]
+            res_str = None
+
+            res_str = ('(?<=Sim Sim ).*(?= R\$)|'
+                       '(?<=Sim Não ).*(?= R\$)|'
+                       '(?<=Não Sim ).*(?= R\$)|'
+                       '(?<=Não Não ).*(?= R\$)')
+            desconto_line = re.findall(res_str, temp_line)[0]
+            quad_dict['Desconto'] = desconto_line.removeprefix(quad_dict['Quantitade'] + ' ')
+
+            quad_dict['Valor com Desconto'] = re.findall('(?<=% R\$ ).*(?= [0-9]{2}/[0-9]{2}/[0-9]{4})', temp_line)[0]
+            time_line = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
+            quad_dict['Data/Hora Registsro'] = datetime.strptime(time_line, '%d/%m/%Y %H:%M:%S')
+            del desconto_line, list_one, list_two, time_line
+            return quad_dict
+
+
+
+    def third_parser(self, input_line, line_type, line_row, cleanse=False):
+        temp_line = input_line
+        if cleanse:
+            temp_line = temp_line.removesuffix('"\n')
+            temp_line = temp_line.removeprefix('"')
+        tmp_dict = {'FileName': self.trunc_filepath, 'FileRow': line_row}
+        if line_type == '1a':
+            tmp_dict['Item'] = self.current_item
+            tmp_dict['CNPJ/CPF'] = re.findall('[0-9]*\.[0-9]*\.[0-9]*/[0-9]*-[0-9]*', temp_line)[0]
+            tmp_list = re.split(' [0-9]*\.[0-9]*\.[0-9]*/[0-9]*-[0-9]* ', temp_line)
+            tmp_dict['Bid'] = tmp_list[0]
+            tmp_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', tmp_list[1])[0]
+            tmp_dict['Time'] = datetime.strptime(tmp_time, '%d/%m/%Y %H:%M:%S')
+        elif line_type == '4b':
+            tmp_dict['Item'] = self.current_item
+            tmp_dict['Desconto'] = re.findall('.* %(?= R\$)', temp_line)[0]
+            tmp_dict['Valor com Desconto'] = re.findall('(?<=% R\$ ).*(?= [0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/)', temp_line)[0]
+            tmp_dict['CNPJ/CPF'] = re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]
+            time_sto = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
+            tmp_dict['Data/Hora Registro'] = datetime.strptime(time_sto, '%d/%m/%Y %H:%M:%S')
+
+        return tmp_dict
+
+    def extract_and_add(self):
+        row_num = 0
+        tmp_param = ''
+        for line in self.lines:
+            row_num += 1
+            if not self.within_sect and re.fullmatch('"Histórico"\n', line) is not None:
+                # Start of section
+                self.within_sect = True
+            elif self.within_sect and not self.within_three and not self.within_two and re.fullmatch(
+                    '"[\s]*Troca de Mensagens"\n', line) is not None:
+                # End of section
+                self.within_sect = False
+            elif self.within_sect and not self.within_two and not self.within_three:
+                if re.fullmatch('^"[\s]*Item: [0-9][0-9]* - .*"\n$', line) is not None:
+                    self.within_two = True
+                    line = line.removesuffix('"\n')
+                    line = line.removeprefix('"')
+                    self.current_item = re.split(' - ', line, maxsplit=1)[1]
+
+            elif self.within_sect and self.within_two and not self.within_three:
+                if re.fullmatch('"Lances (.*)"\n', line) is not None:
+                    self.df2.append(self.col_dict2)
+                    self.within_two = False
+                    self.within_three = True
+                elif re.fullmatch('"ME/EPP/COOP Quantidade Valor Unit. Valor Global Data/Hora Registro"\n', line) is not None:
+                    # For Types 1a and 1b
+                    tmp_param = '1a'
+                elif re.fullmatch('"ME/EPP Quantidade Valor Unit. Valor Global Data/Hora Registro"\n', line) is not None:
+                    # For Types 2a and 2b
+                    tmp_param = '2a'
+                elif re.fullmatch('"CNPJ/CPF Fornecedor Quantidade Valor Unit. Valor Global Data/Hora Registro"\n', line) is not None:
+                    # For Type 3a
+                    tmp_param = '3a'
+                elif re.fullmatch('"ME/EPP/COOP Quantidade Desconto Valor com Desconto Data/Hora Registro"\n', line) is not None:
+                    # For Type 4b
+                    tmp_param = '4b'
+                elif re.fullmatch('"PPB/TP Quantidade Valor Unit. Valor Global Data/Hora Registro"\n', line) is not None:
+                    # For Type 5
+                    tmp_param = '5'
+                elif re.fullmatch('"CNPJ/CPF Fornecedor Qtde Valor Unit. (R$) Valor Global (R$) Marca Data/Hora Registro"\n', line) is not None:
+                    # For Type 6
+                    tmp_param = '6'
+
+                elif re.fullmatch('^"[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} .* [0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}"\n$',
+                                  line) is not None:
+                    if self.col_dict2:
+                        self.df2.append(self.col_dict2)
+                    self.col_dict2 = self.second_parser(line, tmp_param, row_num, cleanse=True) # Differentiating between types done in second_parser function
+
+                elif re.fullmatch('^"Marca: .*"\n$', line) is not None: #Marca
+                    proc_line = line.removeprefix('"')
+                    proc_line = proc_line.removesuffix('"\n')
+                    self.col_dict2['Marca'] = re.split(': ', proc_line, maxsplit=1)[1]
+                elif re.fullmatch('^"Fabricante: .*"\n$', line) is not None: #Fabricante
+                    proc_line = line.removeprefix('"')
+                    proc_line = proc_line.removesuffix('"\n')
+                    self.col_dict2['Fabricante'] = re.split(': ', proc_line, maxsplit=1)[1]
+                elif re.fullmatch('^"Modelo / Versão: .*"\n$|^"Modelo: .*"\n$', line) is not None: #Modelo / Versão
+                    proc_line = line.removeprefix('"')
+                    proc_line = proc_line.removesuffix('"\n')
+                    self.col_dict2['Modelo / Versão'] = re.split(': ', proc_line, maxsplit=1)[1]
+                elif re.fullmatch('^"Descrição Complementar: .*"\n$|^"Descrição Detalhada do Objeto Ofertado: .*"\n$', line) is not None: #Descrição
+                    proc_line = line.removeprefix('"')
+                    proc_line = proc_line.removesuffix('"\n')
+                    self.col_dict2['Description_Proposta'] = re.split(': ', proc_line, maxsplit=1)[1]
+                elif re.fullmatch('^"Porte da empresa: .*"\n', line) is not None:
+                    proc_line = line.removeprefix('"')
+                    proc_line = proc_line.removesuffix('"\n')
+                    self.col_dict2['Porte da empresa'] = re.split(': ', proc_line, maxsplit=1)[1]
+            elif self.within_sect and not self.within_two and self.within_three:
+                if re.fullmatch('"Valor do Lance CNPJ/CPF Data/Hora Registro"\n', line) is not None:
+                    temp_param = '1a'
+                    continue
+                elif re.fullmatch('"Desconto Valor com Desconto CNPJ/CPF Data/Hora Registro"\n', line) is not None:
+                    temp_param = '4b'
+                    continue
+                elif re.fullmatch('^"Não existem lances de desempate ME/EPP para o item"\n$|^"Eventos do Item"\n$|^"Desempate de Lances ME/EPP"\n$',
+                                  line) is not None:
+                    self.within_three = False
+                else:
+                    self.col_dict3 = self.third_parser(line, temp_param, row_num, cleanse=True)
+                    self.df3.append(self.col_dict3)
+                    self.col_dict3 = {}
+
+
+class FourthInfoExtractor:
+    '''
+    Purpose: Extracts all relevant information for File 4 from ONE txt file
+
+    Initial parameters:
+        1. Path to text file
+        2. List of dictionaries which will form the final dataframe
+    '''
+
+    def __init__(self, path, df):
+        self.filepath = path
+        self.trunc_filepath = self.filepath.removeprefix('bids/txt/')
+        self.df4 = df
+        self.col_dict = {}
+        self.within_four = False
+
+        with open(path, encoding="ISO-8859-1") as f:
+            self.lines = f.readlines()
+
+    def line_parser(self, curr_line, row_num):
+        curr_line2 = curr_line.removesuffix('"\n')
+        curr_line2 = curr_line2.removeprefix('"')
+        tmp_dict = {'FileName': self.trunc_filepath, 'FileRow': row_num}
+        tmp_dict['Time'] = datetime.strptime(re.findall('[0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]', curr_line2)[0], '%d/%m/%Y %H:%M:%S')
+        tmp_dict['Firm ID'] = re.split(' [0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9] ', curr_line2)[0]
+        tmp_dict['Message'] = re.split(' [0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9] ', curr_line2)[1]
+        return tmp_dict
+
+    def extract_and_add(self):
+        file_row = 0
+        for line in self.lines:
+            file_row += 1
+            if not self.within_four and re.match('^"Data Mensagem"\n$', line) is not None:
+                self.within_four = True
+            elif not self.within_four and re.fullmatch(
+                    '"Sistema [0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9] .*"\n|"Pregoeiro [0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9] .*"\n|"[0-9]*.[0-9]*.[0-9]*/[0-9]*-[0-9]* [0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9] .*"\n',
+                    line) is not None:
+                self.within_four = True
+                self.col_dict = self.line_parser(line, file_row)
+                self.df4.append(self.col_dict)
+                self.col_dict = {}
+            elif self.within_four and (re.search('Eventos do Pregão', line) is not None or
+                                       re.fullmatch(
+                                           '".* [0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9] .*"\n',
+                                           line) is None):
+                self.within_four = False
+            elif self.within_four:
+                if re.fullmatch(
+                        '".* [0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]"\n|""\n',
+                        line) is not None:
+                    continue
+                else:
+                    self.col_dict = self.line_parser(line, file_row)
+                    self.df4.append(self.col_dict)
+                    self.col_dict = {}
+
+    def update_df(self):
+        return self.df4

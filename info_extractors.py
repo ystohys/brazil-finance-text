@@ -183,8 +183,8 @@ class MidInfoExtractor:
             uno_dict['Quantidade'] = re.findall(res_str, temp_line)[0]
             valor_line = re.findall(' R\$ [0-9][^\s]*[0-9] R\$ [0-9][^\s]*', temp_line)[0]
             valor_line2 = re.split(' R\$ ', valor_line)
-            uno_dict['Valor Unit.'] = valor_line2[1]
-            uno_dict['Valor Global'] = valor_line2[2]
+            uno_dict['Valor Unit. (R$)'] = valor_line2[1]
+            uno_dict['Valor Global (R$)'] = valor_line2[2]
             uno_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
             uno_dict['Data/Hora Registro'] = datetime.strptime(uno_time, '%d/%m/%Y %H:%M:%S')
             del list_one, list_two, valor_line, valor_line2
@@ -202,8 +202,8 @@ class MidInfoExtractor:
             tres_dict['Quantidade'] = re.findall(res_str, temp_line)[0]
             valor_line = re.findall(' R\$ [0-9][^\s]*[0-9] R\$ [0-9][^\s]*', temp_line)[0]
             valor_line2 = re.split(' R\$ ', valor_line)
-            tres_dict['Valor Unit.'] = valor_line2[1]
-            tres_dict['Valor Global'] = valor_line2[2]
+            tres_dict['Valor Unit. (R$)'] = valor_line2[1]
+            tres_dict['Valor Global (R$)'] = valor_line2[2]
             tres_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
             tres_dict['Data/Hora Registro'] = datetime.strptime(tres_time, '%d/%m/%Y %H:%M:%S')
             del valor_line, valor_line2
@@ -238,13 +238,82 @@ class MidInfoExtractor:
             desconto_line = re.findall(res_str, temp_line)[0]
             quad_dict['Desconto'] = desconto_line.removeprefix(quad_dict['Quantitade'] + ' ')
 
-            quad_dict['Valor com Desconto'] = re.findall('(?<=% R\$ ).*(?= [0-9]{2}/[0-9]{2}/[0-9]{4})', temp_line)[0]
+            quad_dict['Valor com Desconto (R$)'] = re.findall('(?<=% R\$ ).*(?= [0-9]{2}/[0-9]{2}/[0-9]{4})', temp_line)[0]
             time_line = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
             quad_dict['Data/Hora Registsro'] = datetime.strptime(time_line, '%d/%m/%Y %H:%M:%S')
             del desconto_line, list_one, list_two, time_line
             return quad_dict
 
+        elif line_type == '5':
+            cinco_dict = {'FileName': self.trunc_filepath,
+                          'FileRow': line_row,
+                          'CNPJ/CPF': re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]}
+            res_str = ('(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Sim .*)'
+                       '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Não .*)'
+                       '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Não Sim .*)'
+                       '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Não Não .*)')
+            cinco_dict['Fornecedor'] = re.findall(res_str, temp_line)[0]
+            list_one = re.findall('Sim Sim|Sim Não|Não Sim|Não Não', temp_line)
+            list_two = re.split(' ', list_one[0])
+            cinco_dict['Porte ME/EPP'] = list_two[0]
+            cinco_dict['Declaração ME/EPP/COOP'] = list_two[1]
+            res_str = None
 
+            res_str = ('(?<=Sim Sim ).*(?= [0-9,.]* R\$ [0-9,.]* R\$)|'
+                       '(?<=Sim Não ).*(?= [0-9,.]* R\$ [0-9,.]* R\$)|'
+                       '(?<=Não Sim ).*(?= [0-9,.]* R\$ [0-9,.]* R\$)|'
+                       '(?<=Não Não ).*(?= [0-9,.]* R\$ [0-9,.]* R\$)')
+            cinco_dict['Declaração PPB/TP'] = re.findall(res_str, temp_line)[0]
+            res_str = None
+
+            res_str = ('(?<=Sim Sim ).*(?= R\$ [0-9,.]* R\$)|'
+                       '(?<=Sim Não ).*(?= R\$ [0-9,.]* R\$)|'
+                       '(?<=Não Sim ).*(?= R\$ [0-9,.]* R\$)|'
+                       '(?<=Não Não ).*(?= R\$ [0-9,.]* R\$)')
+            qtd_hold = re.findall(res_str, temp_line)[0]
+            cinco_dict['Quantidade'] = qtd_hold.removeprefix(cinco_dict['Declaração PPB/TP'] + ' ')
+
+            valor_line = re.findall(' R\$ [0-9][^\s]*[0-9] R\$ [0-9][^\s]*', temp_line)[0]
+            valor_line2 = re.split(' R\$ ', valor_line)
+            cinco_dict['Valor Unit. (R$)'] = valor_line2[1]
+            cinco_dict['Valor Global (R$)'] = valor_line2[2]
+            time_line = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
+            cinco_dict['Data/Hora Registro'] = datetime.strptime(time_line, '%d/%m/%Y %H:%M:%S')
+            del time_line, list_one, list_two, qtd_hold
+
+            return cinco_dict
+
+        elif line_type == '6':
+            seis_dict = {'FileName': self.trunc_filepath,
+                         'FileRow': line_row,
+                         'CNPJ/CPF': re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]}
+            res_str = ('(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*'
+                       '(?= [0-9,.]* [0-9,.]* [0-9,.]* .* [0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2})')
+            seis_dict['Fornecedor'] = re.findall(res_str, temp_line)[0]
+            res_str = None
+
+            res_str = ('(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*'
+                       '(?= [0-9,.]* [0-9,.]* .* [0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2})')
+            qtde_line = re.findall(res_str, temp_line)[0]
+            seis_dict['Quantitade'] = qtde_line.removeprefix(seis_dict['Fornecedor'] + ' ')
+            res_str = None
+
+            res_str = '(?<= {0} {1} )[0-9,.]* [0-9,.]*(?= .* [0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9])'.format(
+                seis_dict['Fornecedor'], seis_dict['Quantitade']
+            )
+            valor_line1 = re.findall(res_str, temp_line)[0]
+            valor_line2 = re.split(' ', valor_line1, maxsplit=1)
+            seis_dict['Valor Unit. (R$)'] = valor_line2[0]
+            seis_dict['Valor Global (R$)'] = valor_line2[1]
+            res_str = None
+
+            res_str = '(?<={0} {1} ).*(?= [0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9])'.format(
+                seis_dict['Valor Unit. (R$)'], seis_dict['Valor Global (R$)']
+            )
+            seis_dict['Marca'] = re.findall(res_str, temp_line)[0]
+            time_line = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
+            seis_dict['Data/Hora Registro'] = datetime.strptime(time_line, '%d/%m/%Y %H:%M:%S')
+            return seis_dict
 
     def third_parser(self, input_line, line_type, line_row, cleanse=False):
         temp_line = input_line
@@ -252,13 +321,13 @@ class MidInfoExtractor:
             temp_line = temp_line.removesuffix('"\n')
             temp_line = temp_line.removeprefix('"')
         tmp_dict = {'FileName': self.trunc_filepath, 'FileRow': line_row}
-        if line_type == '1a':
+        if line_type in ['1a', '2a', '3a', '5', '6']:
             tmp_dict['Item'] = self.current_item
             tmp_dict['CNPJ/CPF'] = re.findall('[0-9]*\.[0-9]*\.[0-9]*/[0-9]*-[0-9]*', temp_line)[0]
             tmp_list = re.split(' [0-9]*\.[0-9]*\.[0-9]*/[0-9]*-[0-9]* ', temp_line)
             tmp_dict['Bid'] = tmp_list[0]
             tmp_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', tmp_list[1])[0]
-            tmp_dict['Time'] = datetime.strptime(tmp_time, '%d/%m/%Y %H:%M:%S')
+            tmp_dict['Date'] = datetime.strptime(tmp_time, '%d/%m/%Y %H:%M:%S')
         elif line_type == '4b':
             tmp_dict['Item'] = self.current_item
             tmp_dict['Desconto'] = re.findall('.* %(?= R\$)', temp_line)[0]
@@ -308,7 +377,7 @@ class MidInfoExtractor:
                 elif re.fullmatch('"PPB/TP Quantidade Valor Unit. Valor Global Data/Hora Registro"\n', line) is not None:
                     # For Type 5
                     tmp_param = '5'
-                elif re.fullmatch('"CNPJ/CPF Fornecedor Qtde Valor Unit. (R$) Valor Global (R$) Marca Data/Hora Registro"\n', line) is not None:
+                elif re.fullmatch('"CNPJ/CPF Fornecedor Qtde Valor Unit. \(R\$\) Valor Global \(R\$\) Marca Data/Hora Registro"\n', line) is not None:
                     # For Type 6
                     tmp_param = '6'
 
@@ -331,6 +400,7 @@ class MidInfoExtractor:
                     proc_line = proc_line.removesuffix('"\n')
                     self.col_dict2['Modelo / Versão'] = re.split(': ', proc_line, maxsplit=1)[1]
                 elif re.fullmatch('^"Descrição Complementar: .*"\n$|^"Descrição Detalhada do Objeto Ofertado: .*"\n$', line) is not None: #Descrição
+                    # BUGGED FOR LINE 60 of 154050_132006.txt!
                     proc_line = line.removeprefix('"')
                     proc_line = proc_line.removesuffix('"\n')
                     self.col_dict2['Description_Proposta'] = re.split(': ', proc_line, maxsplit=1)[1]
@@ -338,8 +408,13 @@ class MidInfoExtractor:
                     proc_line = line.removeprefix('"')
                     proc_line = proc_line.removesuffix('"\n')
                     self.col_dict2['Porte da empresa'] = re.split(': ', proc_line, maxsplit=1)[1]
+                elif re.fullmatch('^"Declaração de Origem do Produto: .*"\n', line) is not None:
+                    proc_line = line.removeprefix('"')
+                    proc_line = proc_line.removesuffix('"\n')
+                    self.col_dict2['Declaração de Origem do Produto'] = re.split(': ', proc_line, maxsplit=1)[1]
             elif self.within_sect and not self.within_two and self.within_three:
-                if re.fullmatch('"Valor do Lance CNPJ/CPF Data/Hora Registro"\n', line) is not None:
+                temp_param = '1a' # By default conforms to 1a
+                if re.fullmatch('"Valor do Lance CNPJ/CPF Data/Hora Registro"\n|"Valor do lance R\$ CNPJ/CPF Data"\n', line) is not None:
                     temp_param = '1a'
                     continue
                 elif re.fullmatch('"Desconto Valor com Desconto CNPJ/CPF Data/Hora Registro"\n', line) is not None:

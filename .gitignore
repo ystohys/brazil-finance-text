@@ -5,3 +5,5 @@ bids/
 File_[0-9].csv
 text_venv/
 *.ipynb
+Folder[0-9]/
+Errors/

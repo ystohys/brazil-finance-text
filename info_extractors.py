@@ -41,11 +41,14 @@ class FirstInfoExtractor:
         return out_dict
 
     def extract_and_add(self):
+        first_file_cond = True
         row_num = 0
         for line in self.lines:
             row_num += 1
             self.col_dict['FileRow'] = row_num
-            if line.count(': ') > 1:
+            if re.fullmatch('"Histórico"\n', line) is not None and first_file_cond:
+                first_file_cond = False
+            if line.count(': ') > 1 and first_file_cond:
                 if (self.within_row or self.stop_count >= 0) and re.fullmatch('^"Aceito para: .* (.*: .*) \."\n',
                                                                               line) is not None:
                     self.col_dict = self.line_split_to_dict(line, self.col_dict, cleanse=True)
@@ -102,8 +105,8 @@ class FirstInfoExtractor:
                                                                 dict_head='Aplicabilidade Decreto 7174')
                         self.col_dict = self.line_split_to_dict(temp_line2, self.col_dict,
                                                                 dict_head='Aplicabilidade Margem de Preferência')
-            elif line.count(': ') == 1:
-                if re.fullmatch('^"Item: [0-9][0-9]*"\n$', line) is not None and not self.within_row:
+            elif line.count(': ') == 1 and first_file_cond:
+                if re.fullmatch('^"Item: [0-9][0-9]*"\n$|^"Item: [0-9][0-9]* - .*"\n', line) is not None and not self.within_row:
                     self.within_row = True
                     self.col_dict = self.line_split_to_dict(line, self.col_dict, cleanse=True)
                 elif (self.within_row or self.stop_count >= 0) and (
@@ -150,7 +153,7 @@ class MidInfoExtractor:
     def update_third_df(self):
         return self.df3
 
-    def second_parser(self, input_line, line_type, line_row, cleanse=False):
+    def second_parser(self, input_line, line_type, line_row, ast_bool=False, cleanse=False):
         # Returns a dictionary with a single line's information parsed
         temp_line = input_line
         if cleanse:
@@ -187,6 +190,7 @@ class MidInfoExtractor:
             uno_dict['Valor Global (R$)'] = valor_line2[2]
             uno_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
             uno_dict['Data/Hora Registro'] = datetime.strptime(uno_time, '%d/%m/%Y %H:%M:%S')
+            uno_dict['Asterisk'] = 1 if ast_bool else 0
             del list_one, list_two, valor_line, valor_line2
             return uno_dict
 
@@ -206,6 +210,7 @@ class MidInfoExtractor:
             tres_dict['Valor Global (R$)'] = valor_line2[2]
             tres_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
             tres_dict['Data/Hora Registro'] = datetime.strptime(tres_time, '%d/%m/%Y %H:%M:%S')
+            tres_dict['Asterisk'] = 1 if ast_bool else 0
             del valor_line, valor_line2
             return tres_dict
 
@@ -241,6 +246,7 @@ class MidInfoExtractor:
             quad_dict['Valor com Desconto (R$)'] = re.findall('(?<=% R\$ ).*(?= [0-9]{2}/[0-9]{2}/[0-9]{4})', temp_line)[0]
             time_line = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
             quad_dict['Data/Hora Registsro'] = datetime.strptime(time_line, '%d/%m/%Y %H:%M:%S')
+            quad_dict['Asterisk'] = 1 if ast_bool else 0
             del desconto_line, list_one, list_two, time_line
             return quad_dict
 
@@ -279,6 +285,7 @@ class MidInfoExtractor:
             cinco_dict['Valor Global (R$)'] = valor_line2[2]
             time_line = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
             cinco_dict['Data/Hora Registro'] = datetime.strptime(time_line, '%d/%m/%Y %H:%M:%S')
+            cinco_dict['Asterisk'] = 1 if ast_bool else 0
             del time_line, list_one, list_two, qtd_hold
 
             return cinco_dict
@@ -313,34 +320,51 @@ class MidInfoExtractor:
             seis_dict['Marca'] = re.findall(res_str, temp_line)[0]
             time_line = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
             seis_dict['Data/Hora Registro'] = datetime.strptime(time_line, '%d/%m/%Y %H:%M:%S')
+            seis_dict['Asterisk'] = 1 if ast_bool else 0
             return seis_dict
 
-    def third_parser(self, input_line, line_type, line_row, cleanse=False):
+    def third_parser(self, input_line, line_type, line_row, ast_bool=False, cleanse=False):
         temp_line = input_line
         if cleanse:
             temp_line = temp_line.removesuffix('"\n')
             temp_line = temp_line.removeprefix('"')
         tmp_dict = {'FileName': self.trunc_filepath, 'FileRow': line_row}
+        if re.fullmatch('\* .*', temp_line) is not None:
+            ast_bool = True
         if line_type in ['1a', '2a', '3a', '5', '6']:
             tmp_dict['Item'] = self.current_item
-            tmp_dict['CNPJ/CPF'] = re.findall('[0-9]*\.[0-9]*\.[0-9]*/[0-9]*-[0-9]*', temp_line)[0]
+            tmp_dict['CNPJ/CPF'] = re.findall('[0-9]{2}[,.][0-9]{3}[,.][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]
             tmp_list = re.split(' [0-9]*\.[0-9]*\.[0-9]*/[0-9]*-[0-9]* ', temp_line)
-            tmp_dict['Bid'] = tmp_list[0]
+            tmp_dict['Valor do Lance (R$)'] = tmp_list[0]
             tmp_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', tmp_list[1])[0]
-            tmp_dict['Date'] = datetime.strptime(tmp_time, '%d/%m/%Y %H:%M:%S')
+            tmp_dict['Data/Hora Registro'] = datetime.strptime(tmp_time, '%d/%m/%Y %H:%M:%S')
+            tmp_dict['Asterisk'] = 1 if ast_bool else 0
         elif line_type == '4b':
             tmp_dict['Item'] = self.current_item
             tmp_dict['Desconto'] = re.findall('.* %(?= R\$)', temp_line)[0]
-            tmp_dict['Valor com Desconto'] = re.findall('(?<=% R\$ ).*(?= [0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/)', temp_line)[0]
+            tmp_dict['Valor com Desconto (R$)'] = re.findall('(?<=% R\$ ).*(?= [0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/)', temp_line)[0]
             tmp_dict['CNPJ/CPF'] = re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]
             time_sto = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
             tmp_dict['Data/Hora Registro'] = datetime.strptime(time_sto, '%d/%m/%Y %H:%M:%S')
+            tmp_dict['Asterisk'] = 1 if ast_bool else 0
+        elif line_type == '7':
+            tmp_dict['Item'] = self.current_item
+            lance_line = re.findall('(?<=R\$ )[0-9,.]*(?=\s)', temp_line)
+            tmp_dict['Valor do Lance (R$)'] = lance_line[0]
+            fator_str = '(?<={0} )[0-9,.]*(?= R\$)'.format(lance_line[0])
+            tmp_dict['Fator de Equalização'] = re.findall(fator_str, temp_line)[0]
+            tmp_dict['Valor do Lance Equalizado R($)'] = lance_line[1]
+            tmp_dict['CNPJ/CPF'] = re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]
+            time_sto = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
+            tmp_dict['Data/Hora Registro'] = datetime.strptime(time_sto, '%d/%m/%Y %H:%M:%S')
+            tmp_dict['Asterisk'] = 1 if ast_bool else 0
 
         return tmp_dict
 
     def extract_and_add(self):
         row_num = 0
         tmp_param = ''
+        third_temp_param = ''
         for line in self.lines:
             row_num += 1
             if not self.within_sect and re.fullmatch('"Histórico"\n', line) is not None:
@@ -387,6 +411,14 @@ class MidInfoExtractor:
                         self.df2.append(self.col_dict2)
                     self.col_dict2 = self.second_parser(line, tmp_param, row_num, cleanse=True) # Differentiating between types done in second_parser function
 
+                elif re.fullmatch('^"\* [0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} .* [0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}"\n$',
+                                  line) is not None: # For disqualified proposals
+                    if self.col_dict2:
+                        self.df2.append(self.col_dict2)
+                    undq_line = line.removeprefix('"* ')
+                    undq_line = undq_line.removesuffix('"\n')
+                    self.col_dict2 = self.second_parser(undq_line, tmp_param, row_num, ast_bool=True, cleanse=False)
+
                 elif re.fullmatch('^"Marca: .*"\n$', line) is not None: #Marca
                     proc_line = line.removeprefix('"')
                     proc_line = proc_line.removesuffix('"\n')
@@ -413,18 +445,23 @@ class MidInfoExtractor:
                     proc_line = proc_line.removesuffix('"\n')
                     self.col_dict2['Declaração de Origem do Produto'] = re.split(': ', proc_line, maxsplit=1)[1]
             elif self.within_sect and not self.within_two and self.within_three:
-                temp_param = '1a' # By default conforms to 1a
+                three_out_cond = ('^"Não existem lances de desempate ME/EPP para o item"\n$|'
+                                  '^"Não existem lances de desempate para o item"\n$|'
+                                  '^"Eventos do Item"\n$|'
+                                  '^"Desempate de Lances ME/EPP"\n$')
                 if re.fullmatch('"Valor do Lance CNPJ/CPF Data/Hora Registro"\n|"Valor do lance R\$ CNPJ/CPF Data"\n', line) is not None:
-                    temp_param = '1a'
+                    third_temp_param = '1a'
+                    continue
+                elif re.fullmatch('"Valor do Lance Fator de Equalização Valor do Lance Equalizado CNPJ/CPF Data/Hora Registro"\n', line) is not None:
+                    third_temp_param = '7'
                     continue
                 elif re.fullmatch('"Desconto Valor com Desconto CNPJ/CPF Data/Hora Registro"\n', line) is not None:
-                    temp_param = '4b'
+                    third_temp_param = '4b'
                     continue
-                elif re.fullmatch('^"Não existem lances de desempate ME/EPP para o item"\n$|^"Eventos do Item"\n$|^"Desempate de Lances ME/EPP"\n$',
-                                  line) is not None:
+                elif re.fullmatch(three_out_cond, line) is not None:
                     self.within_three = False
                 else:
-                    self.col_dict3 = self.third_parser(line, temp_param, row_num, cleanse=True)
+                    self.col_dict3 = self.third_parser(line, third_temp_param, row_num, cleanse=True)
                     self.df3.append(self.col_dict3)
                     self.col_dict3 = {}
 
@@ -487,3 +524,7 @@ class FourthInfoExtractor:
 
     def update_df(self):
         return self.df4
+
+
+if __name__ == "__main__":
+    print('info_extractors.py NOT MEANT TO BE RUN AS MAIN SCRIPT')

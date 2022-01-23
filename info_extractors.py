@@ -108,7 +108,10 @@ class FirstInfoExtractor:
             elif line.count(': ') == 1 and first_file_cond:
                 if re.fullmatch('^"Item: [0-9][0-9]*"\n$|^"Item: [0-9][0-9]* - .*"\n', line) is not None and not self.within_row:
                     self.within_row = True
-                    self.col_dict = self.line_split_to_dict(line, self.col_dict, cleanse=True)
+                    #self.col_dict = self.line_split_to_dict(line, self.col_dict, cleanse=True)
+                    line = line.removeprefix('"')
+                    line = line.removesuffix('"\n')
+                    self.col_dict['Item Name'] = re.findall('Item: [0-9,.]*.*$', line)[0]
                 elif (self.within_row or self.stop_count >= 0) and (
                         re.fullmatch('^"Aceito para: .* \."\n$', line) is not None or
                         re.fullmatch('^"Adjudicado para: .*"\n$', line) is not None):
@@ -163,6 +166,7 @@ class MidInfoExtractor:
         if line_type == '1a' or line_type == '2a':
             uno_dict = {'FileName': self.trunc_filepath,
                         'FileRow': line_row,
+                        'Item Name': self.current_item,
                         'CNPJ/CPF': re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]}
             res_str = ('(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Sim .*)'
                        '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Não .*)'
@@ -197,6 +201,7 @@ class MidInfoExtractor:
         elif line_type == '3a':
             tres_dict = {'FileName': self.trunc_filepath,
                         'FileRow': line_row,
+                        'Item Name': self.current_item,
                         'CNPJ/CPF': re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]}
             res_str = '(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= [0-9,.]* R\$ [0-9,.]* R\$ .*)'
             tres_dict['Fornecedor'] = re.findall(res_str, temp_line)[0]
@@ -217,6 +222,7 @@ class MidInfoExtractor:
         elif line_type == '4b':
             quad_dict = {'FileName': self.trunc_filepath,
                          'FileRow': line_row,
+                         'Item Name': self.current_item,
                          'CNPJ/CPF': re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]}
             res_str = ('(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Sim .*)'
                        '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Não .*)'
@@ -253,6 +259,7 @@ class MidInfoExtractor:
         elif line_type == '5':
             cinco_dict = {'FileName': self.trunc_filepath,
                           'FileRow': line_row,
+                          'Item Name': self.current_item,
                           'CNPJ/CPF': re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]}
             res_str = ('(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Sim .*)'
                        '|(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*(?= Sim Não .*)'
@@ -293,6 +300,7 @@ class MidInfoExtractor:
         elif line_type == '6':
             seis_dict = {'FileName': self.trunc_filepath,
                          'FileRow': line_row,
+                         'Item Name': self.current_item,
                          'CNPJ/CPF': re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]}
             res_str = ('(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} ).*'
                        '(?= [0-9,.]* [0-9,.]* [0-9,.]* .* [0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2})')
@@ -332,15 +340,15 @@ class MidInfoExtractor:
         if re.fullmatch('\* .*', temp_line) is not None:
             ast_bool = True
         if line_type in ['1a', '2a', '3a', '5', '6']:
-            tmp_dict['Item'] = self.current_item
+            tmp_dict['Item Name'] = self.current_item
             tmp_dict['CNPJ/CPF'] = re.findall('[0-9]{2}[,.][0-9]{3}[,.][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]
             tmp_list = re.split(' [0-9]*\.[0-9]*\.[0-9]*/[0-9]*-[0-9]* ', temp_line)
-            tmp_dict['Valor do Lance (R$)'] = tmp_list[0]
+            tmp_dict['Valor do Lance (R$)'] = tmp_list[0].removeprefix('R$ ')
             tmp_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', tmp_list[1])[0]
             tmp_dict['Data/Hora Registro'] = datetime.strptime(tmp_time, '%d/%m/%Y %H:%M:%S')
             tmp_dict['Asterisk'] = 1 if ast_bool else 0
         elif line_type == '4b':
-            tmp_dict['Item'] = self.current_item
+            tmp_dict['Item Name'] = self.current_item
             tmp_dict['Desconto'] = re.findall('.* %(?= R\$)', temp_line)[0]
             tmp_dict['Valor com Desconto (R$)'] = re.findall('(?<=% R\$ ).*(?= [0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/)', temp_line)[0]
             tmp_dict['CNPJ/CPF'] = re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}', temp_line)[0]
@@ -348,7 +356,7 @@ class MidInfoExtractor:
             tmp_dict['Data/Hora Registro'] = datetime.strptime(time_sto, '%d/%m/%Y %H:%M:%S')
             tmp_dict['Asterisk'] = 1 if ast_bool else 0
         elif line_type == '7':
-            tmp_dict['Item'] = self.current_item
+            tmp_dict['Item Name'] = self.current_item
             lance_line = re.findall('(?<=R\$ )[0-9,.]*(?=\s)', temp_line)
             tmp_dict['Valor do Lance (R$)'] = lance_line[0]
             fator_str = '(?<={0} )[0-9,.]*(?= R\$)'.format(lance_line[0])
@@ -379,7 +387,7 @@ class MidInfoExtractor:
                     self.within_two = True
                     line = line.removesuffix('"\n')
                     line = line.removeprefix('"')
-                    self.current_item = re.split(' - ', line, maxsplit=1)[1]
+                    self.current_item = re.findall('Item: [0-9,.]*.*$', line)[0]
 
             elif self.within_sect and self.within_two and not self.within_three:
                 if re.fullmatch('"Lances (.*)"\n', line) is not None:
@@ -432,7 +440,6 @@ class MidInfoExtractor:
                     proc_line = proc_line.removesuffix('"\n')
                     self.col_dict2['Modelo / Versão'] = re.split(': ', proc_line, maxsplit=1)[1]
                 elif re.fullmatch('^"Descrição Complementar: .*"\n$|^"Descrição Detalhada do Objeto Ofertado: .*"\n$', line) is not None: #Descrição
-                    # BUGGED FOR LINE 60 of 154050_132006.txt!
                     proc_line = line.removeprefix('"')
                     proc_line = proc_line.removesuffix('"\n')
                     self.col_dict2['Description_Proposta'] = re.split(': ', proc_line, maxsplit=1)[1]

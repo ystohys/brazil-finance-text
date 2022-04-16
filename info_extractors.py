@@ -705,6 +705,7 @@ class MidInfoExtractor:
             elif self.within_five and not self.within_two and not self.within_three:
                 raise ValueError(5)
 
+# End for MidInfoExtractor
 
 
 class FourthInfoExtractor:

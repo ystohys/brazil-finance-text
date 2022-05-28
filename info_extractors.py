@@ -75,6 +75,16 @@ class FirstInfoExtractor:
                         self.col_dict = self.line_split_to_dict(temp_line2, self.col_dict)
 
                     elif (self.within_row or self.stop_count >= 0) and re.fullmatch(
+                        '^"Valor Máximo Aceitável: .*[\s]*Situação: .*"\n$', line) is not None:
+                        line = line.removesuffix('"\n')
+                        line = line.removeprefix('"')
+                        temp_line = line.split(' Situação: ')
+                        temp_line1 = temp_line[0]
+                        temp_line2 = 'Situação: ' + temp_line[1]
+                        self.col_dict = self.line_split_to_dict(temp_line1, self.col_dict, dict_head='Valor Máximo Aceitável')
+                        self.col_dict = self.line_split_to_dict(temp_line2, self.col_dict)
+
+                    elif (self.within_row or self.stop_count >= 0) and re.fullmatch(
                             '^"Valor [Ee]stimado: .*[\s]*Situação: .*"\n$', line) is not None:
                         line = line.removesuffix('"\n')
                         line = line.removeprefix('"')
@@ -259,7 +269,7 @@ class MidInfoExtractor:
             del valor_line, valor_line2
             return tres_dict
 
-        elif line_type == '4b': # NEEDS CHANGING FOR DEMAIS
+        elif line_type == '4b':
             quad_dict = {'FileName': self.trunc_filepath,
                          'FileRow': line_row,
                          'Item Name': self.current_item,
@@ -517,7 +527,9 @@ class MidInfoExtractor:
         if cleanse:
             temp_line = temp_line.removesuffix('"\n')
             temp_line = temp_line.removeprefix('"')
-        tmp_dict = {'FileName': self.trunc_filepath, 'FileRow': line_row}
+        tmp_dict = {'FileName': self.trunc_filepath,
+                    'FileRow': line_row,
+                    'Item Name': self.current_item}
         tmp_list = re.split(' [0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} ', temp_line, maxsplit=1)
         tmp_dict['Events'] = tmp_list[0]
         tmp_time = re.findall('[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}', temp_line)[0]
@@ -556,7 +568,9 @@ class MidInfoExtractor:
                         self.within_sect = False
 
                 elif self.within_sect and self.within_two and not self.within_three and not self.within_five:
-                    if re.fullmatch('"Não existem lances de desempate ME/EPP para o item"\n', line) is not None:
+                    two_end_cond = ('"Não existem lances de desempate ME/EPP para o item"\n|'
+                                    '"Não existem propostas para o item"\n')
+                    if re.fullmatch(two_end_cond, line) is not None:
                         if self.col_dict2:
                             self.df2.append(self.col_dict2)
                         self.within_two = False
@@ -663,7 +677,8 @@ class MidInfoExtractor:
                     # three_out_cond holds the possible 'exit lines' for Folder 3 related info
                     three_out_cond = ('^"Não existem lances de desempate ME/EPP para o item"\n$|'
                                       '^"Não existem lances de desempate para o item"\n$|'
-                                      '^"Desempate de Lances ME/EPP"\n$|')
+                                      '^"Não existem lances para o item"\n$|'
+                                      '^"Desempate de Lances ME/EPP"\n$')
                     if re.fullmatch(three_out_cond, line) is not None:
                         self.within_three = False
                     elif re.fullmatch('"Eventos do Item"\n', line) is not None:

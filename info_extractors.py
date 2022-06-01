@@ -142,7 +142,7 @@ class FirstInfoExtractor:
 
 class MidInfoExtractor:
 
-    def __init__(self, path, df2, df3, df5):
+    def __init__(self, path, df2, df3, df5, df6):
         self.filepath = path
         self.trunc_filepath = self.filepath.removeprefix('bids/txt/')
 
@@ -150,15 +150,18 @@ class MidInfoExtractor:
         self.within_two = False
         self.within_three = False
         self.within_five = False
+        self.within_six = False
         self.current_item = ""
 
         self.df2 = df2
         self.df3 = df3
         self.df5 = df5
+        self.df6 = df6
 
         self.col_dict2 = {}
         self.col_dict3 = {}
         self.col_dict5 = {}
+        self.col_dict6 = {}
 
         with open(path, encoding="ISO-8859-1") as f:
             self.lines = f.readlines()
@@ -171,6 +174,9 @@ class MidInfoExtractor:
 
     def update_fifth_df(self):
         return self.df5
+
+    def update_sixth_df(self):
+        return self.df6
 
     def second_parser(self, input_line, line_type, line_row, ast_bool=False, cleanse=False):
         # Returns a dictionary with a single line's information parsed
@@ -538,18 +544,57 @@ class MidInfoExtractor:
 
         return tmp_dict
 
+    def sixth_parser(self, input_line, line_type, line_row, ast_bool=False, cleanse=False):
+        temp_line = input_line
+        if cleanse:
+            temp_line = temp_line.removesuffix('"\n')
+            temp_line = temp_line.removeprefix('"')
+        tmp_dict = {'FileName': self.trunc_filepath,
+                    'FileRow': line_row,
+                    'Item Name': self.current_item}
+        if line_type == '1':
+            tmp_dict['CNPJ/CPF'] = re.findall('[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2}|[0-9]{3}[.,][0-9]{3}[.,][0-9]{3}-[0-9]{2}', temp_line)[0]
+            first_date_str = ('(?<=[0-9]{2}[.,][0-9]{3}[.,][0-9]{3}/[0-9]{4}-[0-9]{2} )'
+                              '[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2,3}'
+                              '(?= [0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2,3})|'
+                              '(?<=[0-9]{3}[.,][0-9]{3}[.,][0-9]{3}-[0-9]{2} )'
+                              '[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2,3}'
+                              '(?= [0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2,3})')
+            first_date = re.findall(first_date_str, temp_line)[0]
+            second_date_str = '(?<={0} )'.format(first_date) + '[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2,3}'
+            second_date = re.findall(second_date_str, temp_line)[0]
+            first_date = first_date[:-4]
+            second_date = second_date[:-4]
+            tmp_dict['Data/Hora Inicial Desempate'] = datetime.strptime(first_date, '%d/%m/%Y %H:%M:%S')
+            tmp_dict['Data/Hora Final Desempate'] = datetime.strptime(second_date, '%d/%m/%Y %H:%M:%S')
+
+            sit_str = ('(?<=[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{3}'
+                       ' [0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{3} ).*(?= R\$)|'
+                       '(?<=[0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{3}'
+                       ' [0-9]{2}/[0-9]{2}/[0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{3} ).*(?= -$)')
+            tmp_dict['Situação do Lance'] = re.findall(sit_str, temp_line)[0]
+            if re.search('R\$ [0-9,.]*$', temp_line):
+                tmp_dict['Valor do Lance'] = re.findall('(?<=R\$ )[0-9,.]*$', temp_line)[0]
+            elif re.search('-$', temp_line):
+                tmp_dict['Valor do Lance'] = '-'
+            else:
+                print('UNSEEN FOLDER 6 TYPE! CORRECTION REQUIRED!')
+
+            return tmp_dict
+
     def extract_and_add(self):
         try:
             row_num = 0
             tmp_param = ''
             third_temp_param = ''
+            sixth_temp_param = ''
             for line in self.lines:
                 #print(line)
                 row_num += 1
                 if not self.within_sect and re.fullmatch('"Histórico"\n', line) is not None:
                     # Start of main section
                     self.within_sect = True
-                elif self.within_sect and not self.within_two and not self.within_three and not self.within_five:
+                elif self.within_sect and not self.within_two and not self.within_three and not self.within_five and not self.within_six:
                     # Neutral zone
                     if re.fullmatch('^"[\s]*Item: [0-9][0-9]* - .*"\n$', line) is not None:
                         # Start of Folder 2 information
@@ -563,11 +608,14 @@ class MidInfoExtractor:
                     elif re.fullmatch('^"Eventos do Item"\n', line) is not None:
                         # Start of Folder 5 information
                         self.within_five = True
+                    elif re.fullmatch('^"Desempate de Lances ME/EPP"\n', line) is not None:
+                        # Start of Folder 6 information
+                        self.within_six = True
                     elif re.fullmatch('"[\s]*Troca de Mensagens"\n', line) is not None:
                         # End of main section
                         self.within_sect = False
 
-                elif self.within_sect and self.within_two and not self.within_three and not self.within_five:
+                elif self.within_sect and self.within_two and not self.within_three and not self.within_five and not self.within_six:
                     two_end_cond = ('"Não existem lances de desempate ME/EPP para o item"\n|'
                                     '"Não existem propostas para o item"\n')
                     if re.fullmatch(two_end_cond, line) is not None:
@@ -673,17 +721,19 @@ class MidInfoExtractor:
                             self.col_dict2 = {}
                             self.within_two = False
 
-                elif self.within_sect and not self.within_two and self.within_three and not self.within_five:
+                elif self.within_sect and not self.within_two and self.within_three and not self.within_five and not self.within_six:
                     # three_out_cond holds the possible 'exit lines' for Folder 3 related info
                     three_out_cond = ('^"Não existem lances de desempate ME/EPP para o item"\n$|'
                                       '^"Não existem lances de desempate para o item"\n$|'
-                                      '^"Não existem lances para o item"\n$|'
-                                      '^"Desempate de Lances ME/EPP"\n$')
+                                      '^"Não existem lances para o item"\n$')
                     if re.fullmatch(three_out_cond, line) is not None:
                         self.within_three = False
                     elif re.fullmatch('"Eventos do Item"\n', line) is not None:
                         self.within_three = False
                         self.within_five = True
+                    elif re.fullmatch('"Desempate de Lances ME/EPP"\n', line) is not None:
+                        self.within_three = False
+                        self.within_six = True
                     elif re.fullmatch('"Valor do Lance CNPJ/CPF Data/Hora Registro"\n|"Valor do lance R\$ CNPJ/CPF Data"\n', line) is not None:
                         third_temp_param = '1a'
                         continue
@@ -698,7 +748,7 @@ class MidInfoExtractor:
                         self.df3.append(self.col_dict3)
                         self.col_dict3 = {}
 
-                elif self.within_sect and not self.within_two and not self.within_three and self.within_five:
+                elif self.within_sect and not self.within_two and not self.within_three and self.within_five and not self.within_six:
                     five_out_cond = ('"Não existem intenções de recurso para o item"\n|'
                                      '"Intenções de Recurso para o Item"\n|'
                                      '"Para consultar intenção de recurso do item,.*"\n|'
@@ -712,13 +762,28 @@ class MidInfoExtractor:
                         self.col_dict5 = self.fifth_parser(line, row_num, cleanse=True)
                         self.df5.append(self.col_dict5)
                         self.col_dict5 = {}
+
+                elif self.within_sect and not self.within_two and not self.within_three and not self.within_five and self.within_six:
+                    if re.fullmatch('"Eventos do Item"\n', line) is not None:
+                        self.within_six = False
+                        self.within_five = True
+                    elif re.fullmatch('"CPF/CNPJ Data/Hora Inicial Desempate Data/Hora Final Desempate Situação do Lance Valor do Lance"\n', line) is not None:
+                        sixth_temp_param = '1'
+                        continue
+                    else:
+                        self.col_dict6 = self.sixth_parser(line, sixth_temp_param, row_num, cleanse=True)
+                        self.df6.append(self.col_dict6)
+                        self.col_dict6 = {}
+
         except Exception as e:
-            if self.within_two and not self.within_three and not self.within_five:
+            if self.within_two and not self.within_three and not self.within_five and not self.within_six:
                 raise ValueError(2)
-            elif self.within_three and not self.within_two and not self.within_five:
+            elif self.within_three and not self.within_two and not self.within_five and not self.within_six:
                 raise ValueError(3)
-            elif self.within_five and not self.within_two and not self.within_three:
+            elif self.within_five and not self.within_two and not self.within_three and not self.within_six:
                 raise ValueError(5)
+            elif self.within_six and not self.within_two and not self.within_three and not self.within_five:
+                raise ValueError(6)
 
 # End for MidInfoExtractor
 

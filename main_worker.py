@@ -10,21 +10,23 @@ def main(all_files, file_suffix, folder_pathway):
     :param folder_pathway: The path to the folder where all txt files are kept.
     :return: Number of files processed and number of files not processed due to errors
     '''
-    grand_count = 0 # Total number of files went through
-    count_one, count_two, count_three, count_four, count_five = 0, 0, 0, 0, 0
-    err_count_one, err_count_two, err_count_three, err_count_four, err_count_five = 0, 0, 0, 0, 0
+    grand_count = 0  # Total number of files went through
+    count_one, count_two, count_three, count_four, count_five, count_six = 0, 0, 0, 0, 0, 0
+    err_count_one, err_count_two, err_count_three, err_count_four, err_count_five, err_count_six = 0, 0, 0, 0, 0, 0
 
     df1 = []
     df2 = []
     df3 = []
     df4 = []
     df5 = []
+    df6 = []
 
     error_files_one = []
     error_files_two = []
     error_files_three = []
     error_files_four = []
     error_files_five = []
+    error_files_six = []
 
     for each_file in all_files:
         filepath = './{0}/{1}'.format(folder_pathway, each_file)
@@ -43,21 +45,24 @@ def main(all_files, file_suffix, folder_pathway):
             error_files_one.append(each_file)
 
         try:
-            temp_mid_extractor = MidInfoExtractor(filepath, df2, df3, df5)
+            temp_mid_extractor = MidInfoExtractor(filepath, df2, df3, df5, df6)
             temp_mid_extractor.extract_and_add()
             df2 = temp_mid_extractor.update_second_df()
             df3 = temp_mid_extractor.update_third_df()
             df5 = temp_mid_extractor.update_fifth_df()
+            df6 = temp_mid_extractor.update_sixth_df()
             count_two += 1
             count_three += 1
             count_five += 1
+            count_six += 1
             del temp_mid_extractor
             gc.collect()
         except ValueError as e:
-            # Note here that if there is an error in extracting Folder 2 info, then Folder 3 and 5's info will not be
-            # extracted either. This means that the true 'missing' information count for Folders 2, 3, 5 is the sum of
-            # err_count_two, err_count_three and err_count_five. The union of error_files_two, error_files_three and
-            # error_files_five is also all the files which did not have any information extracted for Folders 2, 3, 5.
+            # Note here that if there is an error in extracting Folder 2 info, then Folder 3, 5 and 6's info will not be
+            # extracted either. This means that the true 'missing' information count for Folders 2, 3, 5, 6 is the sum
+            # of err_count_two, err_count_three, err_count_five and err_count_six. The union of error_files_two,
+            # error_files_three, error_files_five and error_files_six is also all the files which did not have any
+            # information extracted for Folders 2, 3, 5, 6.
             if e.args[0] == 2:
                 err_count_two += 1
                 error_files_two.append(each_file)
@@ -67,6 +72,9 @@ def main(all_files, file_suffix, folder_pathway):
             elif e.args[0] == 5:
                 err_count_five += 1
                 error_files_five.append(each_file)
+            elif e.args[0] == 6:
+                err_count_six += 1
+                error_files_six.append(each_file)
 
         try:
             temp4_extractor = FourthInfoExtractor(filepath, df4)
@@ -120,6 +128,14 @@ def main(all_files, file_suffix, folder_pathway):
         for err in error_files_five:
             f.write("%s\n" % err)
 
+    if not os.path.exists('./Errors/FolderSixErrors'):
+        os.makedirs('./Errors/FolderSixErrors', exist_ok=True)
+    with open('./Errors/FolderSixErrors/error_list_six_{0}.txt'.format(file_suffix), 'w') as f:
+        err_summ = 'Total files scanned: {0} | Number of error files: {1}'.format(count_six, err_count_six)
+        f.write("%s\n" % err_summ)
+        for err in error_files_six:
+            f.write("%s\n" % err)
+
     final_df1 = pd.DataFrame(df1)
     out_dir1 = './Folder1'
     if not os.path.exists(out_dir1):
@@ -165,11 +181,22 @@ def main(all_files, file_suffix, folder_pathway):
     del final_df5, df5
     gc.collect()
 
+    final_df6 = pd.DataFrame(df6)
+    out_dir6 = './Folder6'
+    if not os.path.exists(out_dir6):
+        os.makedirs(out_dir6, exist_ok=True)
+    result_name = '{0}/File_6_{1}.csv'.format(out_dir6, file_suffix)
+    final_df6.to_csv(path_or_buf=result_name, index=False)
+    del final_df6, df6
+    gc.collect()
+
     print(
-        'Total files cleared: {0} | Number of error files (for folders 2, 3, 5): {1} | Percentage = {2:.2f}%'.format(
-        grand_count, err_count_two+err_count_three+err_count_five, ((err_count_two+err_count_three+err_count_five)/grand_count)*100.0
+        'Total files cleared: {0} | Number of error files (for folders 2, 3, 5, 6): {1} | Percentage = {2:.2f}%'.format(
+            grand_count, err_count_two+err_count_three+err_count_five+err_count_six,
+            ((err_count_two+err_count_three+err_count_five+err_count_six)/grand_count)*100.0
         )
     )
+
 
 if __name__ == "__main__":
     main(ast.literal_eval(sys.argv[2]), sys.argv[3], sys.argv[1])
